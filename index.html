@@ -358,9 +358,21 @@ window.onload = function() {
 	    toggleBtn.textContent = "▶";
 	  }
 	});
-	
-	addHoldEvent(document.getElementById("rewind-btn"), null, () => setControl({ back: -5 }));
 
+	/* 스크롤 방향 전환 */
+	let isReverse = false;
+	const rewindBtn = document.getElementById("rewind-btn");
+	addHoldEvent(rewindBtn, null, () => {
+	  isReverse = !isReverse;
+	  if (isReverse) {
+	    setControl({ reverse: true });
+	    rewindBtn.textContent = ">>";
+	  } else {
+	    setControl({ reverse: false });
+	    rewindBtn.textContent = "<<";
+	  }
+	});
+	
 	// ------------------- 뉴스 글자 크기 조절 -------------------
   let currentFontSize = 28; // 기본 글자 크기(px)
   const fontSizeLabel = document.getElementById("volume-label"); // 기존 볼륨 라벨 사용
@@ -431,7 +443,7 @@ window.onload = function() {
 </div>
 	
 <div class="btn-row">
-  <div class="btn-label">재생<br>뒤로</div>
+  <div class="btn-label">재생<br>방향</div>
   <button id="toggle-play-btn">▶</button>
   <button id="rewind-btn"><<</button>
 </div>
