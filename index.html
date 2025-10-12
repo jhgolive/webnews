@@ -344,7 +344,7 @@ window.onload = function() {
 	  update(ref(db, "ttsControl"), data);
 	}
 	
-	let currentVolume = 0.5;
+	let currentFontSize = 28; // px 단위
 	let isPlaying = false;  // 재생 상태 기억
 	
 	const toggleBtn = document.getElementById("toggle-play-btn");
@@ -361,30 +361,28 @@ window.onload = function() {
 	
 	addHoldEvent(document.getElementById("rewind-btn"), null, () => setControl({ back: -5 }));
 
-	// 볼륨 라벨 엘리먼트 가져오기
-	const volumeLabel = document.getElementById("volume-label");
+	// 글자 라벨 엘리먼트 가져오기
+	const fontLabel = document.getElementById("font-label");
 	
-	function updateVolumeLabel() {
-	  volumeLabel.textContent = currentVolume.toFixed(1);  // 0.0 형식
+	function updateFontLabel() {
+	  fontLabel.textContent = currentFontSize;
 	}
-	  
-	function changeVolume(delta) {
-	  currentVolume = Math.min(1, Math.max(0, currentVolume + delta));
-	  currentVolume = Math.round(currentVolume * 10) / 10;  // 소수점 1자리 반올림
-	  setControl({ volume: currentVolume });
-	  updateVolumeLabel();  // ★ 볼륨값 실시간 표시
+		  
+	// 글자 크기 변경
+	function changeFontSize(delta) {
+	  currentFontSize = Math.min(60, Math.max(10, currentFontSize + delta)); // 10~60px 제한
+	  newsEl.style.fontSize = currentFontSize + "px"; // 뉴스 텍스트에 적용
+	  updateFontLabel();
+	  setControl({ fontSize: currentFontSize }); // Firebase 업로드
 	}
 	
-	// ✅ 볼륨 버튼에 hold 이벤트 적용
-	addHoldEvent(document.getElementById("vol-up"), 0.1, changeVolume);
-	addHoldEvent(document.getElementById("vol-down"), -0.1, changeVolume);
+	// 버튼에 hold 이벤트 적용
+	addHoldEvent(document.getElementById("font-up"), 2, changeFontSize);   // 한 번 누르면 +2px
+	addHoldEvent(document.getElementById("font-down"), -2, changeFontSize);
 	
-	// 초기 라벨 표시
-	updateVolumeLabel();
-
-	// ✅ 초기 볼륨값 0.5를 Firebase에 업로드
-	setControl({ volume: currentVolume });
-};
+	updateFontLabel();
+	setControl({ fontSize: currentFontSize });
+	};
 </script>
 </head>
 
@@ -430,9 +428,9 @@ window.onload = function() {
 <hr>
 <div id="status-text">뉴스 컨트롤</div>
 <div class="btn-row">
-  <div class="btn-label">볼륨 <span id="volume-label">0.5</span></div>
-  <button id="vol-up">△</button>
-  <button id="vol-down">▽</button>
+  <div class="btn-label">글자크기 <span id="font-label">28</span></div>
+  <button id="font-up">+</button>
+  <button id="font-down">-</button>
 </div>
 	
 <div class="btn-row">
