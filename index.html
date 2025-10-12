@@ -345,7 +345,7 @@ window.onload = function() {
 	}
 	
 	let currentVolume = 0.5;
-	let isPlaying = false;  // 재생 상태 기억
+	let isPlaying = true;  // 재생 상태 기억
 	
 	const toggleBtn = document.getElementById("toggle-play-btn");
 	addHoldEvent(toggleBtn, null, () => {
@@ -372,7 +372,14 @@ window.onload = function() {
 	    rewindBtn.textContent = "<<";
 	  }
 	});
+
+	// 버튼 UI 초기화
+	  toggleBtn.textContent = isPlaying ? "‖" : "▶";
+	  rewindBtn.textContent = isReverse ? ">>" : "<<";
 	
+	  // Firebase 초기값 업로드
+	  setControl({ playing: isPlaying, reverse: isReverse });
+		
 	// ------------------- 뉴스 글자 크기 조절 -------------------
   let currentFontSize = 28; // 기본 글자 크기(px)
   const fontSizeLabel = document.getElementById("volume-label"); // 기존 볼륨 라벨 사용
