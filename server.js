@@ -39,6 +39,10 @@ app.use(express.urlencoded({ extended: true }));
 // serve static viewer/controller
 app.use(express.static(__dirname));
 
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "index.html"));
+});
+
 // Simple health check
 app.get("/health", (req, res) => res.send({ status: "ok" }));
 
