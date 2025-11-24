@@ -44,49 +44,41 @@
       }
     }
 
-    // ⭐⭐⭐ 여기부터가 문제 해결 핵심 ⭐⭐⭐
-    // iframe 내부 페이지가 load될 때마다 링크 클릭을 proxy로 강제 변환
-    iframe.addEventListener("load", () => {
-      safeExec((win) => {
+    // 🔹 iframe load 시 항상 이벤트 리스너 재등록
+    function attachIframeHandlers() {
+      safeExec(win => {
         const doc = win.document;
 
-        // 모든 <a> 태그 클릭 hijack
-        doc.addEventListener("click", (e) => {
+        // 모든 <a> 클릭 강제 proxy
+        doc.addEventListener("click", e => {
           const a = e.target.closest("a");
           if (!a) return;
 
           const href = a.getAttribute("href");
           if (!href) return;
 
-          // 절대/상대 경로 모두 처리
-          const url = new URL(href, win.location.href).href;
-
           e.preventDefault();
+          const url = new URL(href, win.location.href).href;
           iframe.src = `/proxy?url=${encodeURIComponent(url)}`;
         });
 
-        // script 내부에서 window.location.href 로 이동할 때도 가로채기
-        const origAssign = win.location.assign.bind(win.location);
-        win.location.assign = function(u) {
-          iframe.src = `/proxy?url=${encodeURIComponent(new URL(u, win.location.href).href)}`;
-        };
-
-        const origReplace = win.location.replace.bind(win.location);
-        win.location.replace = function(u) {
-          iframe.src = `/proxy?url=${encodeURIComponent(new URL(u, win.location.href).href)}`;
-        };
-
-        Object.defineProperty(win.location, "href", {
-          set(u) {
-            iframe.src = `/proxy?url=${encodeURIComponent(new URL(u, win.location.href).href)}`;
-          }
+        // window.location 가로채기
+        const loc = win.location;
+        const origAssign = loc.assign.bind(loc);
+        loc.assign = u => { iframe.src = `/proxy?url=${encodeURIComponent(new URL(u, loc.href).href)}`; };
+        const origReplace = loc.replace.bind(loc);
+        loc.replace = u => { iframe.src = `/proxy?url=${encodeURIComponent(new URL(u, loc.href).href)}`; };
+        Object.defineProperty(loc, "href", {
+          set(u) { iframe.src = `/proxy?url=${encodeURIComponent(new URL(u, loc.href).href)}`; }
         });
       });
-    });
+    }
 
-    // WebSocket 명령 처리
-    ws.onmessage = (ev) => {
-      let msg = ev.data;
+    iframe.addEventListener("load", attachIframeHandlers);
+
+    // 🔹 WebSocket 명령 처리
+    ws.onmessage = ev => {
+      const msg = ev.data;
 
       try {
         const obj = JSON.parse(msg);
@@ -94,27 +86,20 @@
           iframe.src = `/proxy?url=${encodeURIComponent(obj.url)}`;
           return;
         }
-      } catch (e) {}
+      } catch(e){}
 
-      if (msg === 'scrollDown') {
-        safeExec(win => win.scrollBy(0, 400));
-      } else if (msg === 'scrollUp') {
-        safeExec(win => win.scrollBy(0, -400));
-      } else if (msg.startsWith('go:')) {
+      if (msg === "scrollDown") safeExec(win => win.scrollBy(0,400));
+      else if (msg === "scrollUp") safeExec(win => win.scrollBy(0,-400));
+      else if (msg.startsWith("go:")) {
         const url = msg.slice(3);
         iframe.src = `/proxy?url=${encodeURIComponent(url)}`;
-      } else if (msg.startsWith('eval:')) {
-        const code = msg.slice(5);
-        safeExec(win => { try { win.eval(code); } catch (e) {} });
-      } else if (msg.startsWith('click:')) {
-        const sel = msg.slice(6);
-        safeExec(win => {
-          const el = win.document.querySelector(sel);
-          if (el) el.click();
-        });
-      } else {
-        safeExec(win => { try { win.eval(msg); } catch (e) {} });
       }
+      else if (msg.startsWith("eval:")) safeExec(win => { try { win.eval(msg.slice(5)); } catch(e){} });
+      else if (msg.startsWith("click:")) safeExec(win => {
+        const el = win.document.querySelector(msg.slice(6));
+        if(el) el.click();
+      });
+      else safeExec(win => { try { win.eval(msg); } catch(e){} });
     };
   </script>
 </body>
