@@ -55,8 +55,6 @@ app.get("/health", (req, res) => res.send({ status: "ok" }));
  * - remove X-Frame-Options and Content-Security-Policy headers
  * - inject <base href="..."> into <head> to fix relative links
  */
-import { fetch } from "undici";
-
 app.get("/proxy", async (req, res) => {
   const target = req.query.url;
   if (!target) {
