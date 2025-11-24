@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Viewer + Controller with WebSocket and proxy for Prism Live Studio",
   "main": "server.js",
+  "type": "module",
   "scripts": {
     "start": "node server.js"
   },
