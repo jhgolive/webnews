@@ -19,6 +19,7 @@ import helmet from "helmet";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
+import { fetch } from "undici";
 
 dotenv.config();
 
@@ -54,6 +55,8 @@ app.get("/health", (req, res) => res.send({ status: "ok" }));
  * - remove X-Frame-Options and Content-Security-Policy headers
  * - inject <base href="..."> into <head> to fix relative links
  */
+import { fetch } from "undici";
+
 app.get("/proxy", async (req, res) => {
   const target = req.query.url;
   if (!target) {
@@ -66,45 +69,56 @@ app.get("/proxy", async (req, res) => {
     const resp = await fetch(target, {
       headers: {
         "User-Agent": req.headers["user-agent"] || "Mozilla/5.0"
-      }
+      },
+      // 🔥 중요: undici는 compression 옵션으로 자동 압축 제거 가능
+      // Node18 기본 fetch는 이게 안됨
+      compress: false
     });
 
-    // FIX 1. Content-Encoding 제거 (gzip/br/deflate 문제 해결)
-    resp.headers.delete("content-encoding");
-    resp.headers.delete("Content-Encoding");
+    // 🔥 모든 content-encoding 관련 헤더 제거
+    res.removeHeader("content-encoding");
 
-    // Headers to skip
-    const headersToSkip = [
+    const skip = [
       "x-frame-options",
       "content-security-policy",
       "content-security-policy-report-only",
       "strict-transport-security",
-      "content-encoding"  // FIX 2
+      "content-encoding",
+      "cf-cache-status",
+      "cf-ray",
+      "etag",
+      "vary"
     ];
 
     for (const [k, v] of resp.headers.entries()) {
-      if (!headersToSkip.includes(k.toLowerCase())) {
+      if (!skip.includes(k.toLowerCase())) {
         res.setHeader(k, v);
       }
     }
 
-    const contentType = resp.headers.get("content-type") || "text/html; charset=utf-8";
+    const contentType =
+      resp.headers.get("content-type") || "text/html; charset=utf-8";
     res.setHeader("Content-Type", contentType);
 
-    const body = await resp.text();
+    let body = await resp.text();
 
     if (contentType.includes("text/html")) {
-      const baseTag =
-        `<base href="${targetUrl.origin}" />\n` +
+      const inject =
+        `<base href="${targetUrl.origin}">\n` +
         `<meta name="proxied-from" content="${targetUrl.href}">\n`;
 
-      const injected = body.replace(/<head([^>]*)>/i, (m) => `${m}\n${baseTag}`);
-      res.send(injected);
+      body = body.replace(
+        /<head([^>]*)>/i,
+        (m) => `${m}\n${inject}`
+      );
+      res.send(body);
       return;
     }
 
+    // binary fallback
     const buffer = Buffer.from(await resp.arrayBuffer());
     res.send(buffer);
+
   } catch (err) {
     console.error("Proxy error:", err);
     res.status(500).send("Proxy fetch failed: " + String(err.message));
