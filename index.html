@@ -1,458 +1,97 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
 <head>
-<meta charset="utf-8">
-<title>GPS 지도/뉴스 컨트롤</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<style>
-/* 전체 body 설정 (텍스트 관리 페이지와 유사하게) */
-body {
-  margin: 0;
-  padding: 10px;
-  font-family: Arial, sans-serif;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch; /* 좌우 꽉 차도록 */
-  min-height: 100vh;
-  background: #111;
-  color: white;
-  box-sizing: border-box;
-  text-align: center;
-}
-
-/* 상태 텍스트 */
-#status-text { 
-  font-size: 24px; 
-  font-weight: bold; 
-  margin: 15px 0;
-}
-
-/* 버튼 행 (카드 스타일) */
-.btn-row {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin-bottom: 0px;
-  justify-content: space-between;
-  background: #222;
-  padding: 5px;
-  border-radius: 8px;
-  border: 2px solid #000033;
-  width: 45ch;          /* PC에서 고정 폭 */
-  margin-left: auto;
-  margin-right: auto;
-  box-sizing: border-box;
-}
-
-/* 버튼 앞 라벨 */
-.btn-label {
-  font-size: 25px;
-  font-weight: bold;
-  text-align: right;
-  flex: 1;
-}
-
-/* 버튼 공통 스타일 */
-button {
-  display: flex;              /* flex 정렬 */
-  align-items: center;        /* 세로 중앙 */
-  justify-content: center;    /* 가로 중앙 */
-  font-family: monospace;     /* 글자 폭 일정하게 */
-  flex: none;  /* 같은 비율로 크기 분배 */
-  width: 135px;
-  height: 80px;
-  padding: 0px;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 40px;
-  background: #000033;
-  color: #fff;
-  user-select: none;
-}
-
-button.active {
-  background: #3333ff;
-}
-
-/* 모바일 화면 대응 */
-@media (max-width: 480px) {
-  .btn-row {
-    width: 41ch; /* 모바일에서는 조금 줄임 */
-  }
-  button {
-    width: 135px;
-    height: 80px;
-    font-size: 40px;
-    padding: 15px;
-  }
-}
-</style>
-
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
-import { getDatabase, ref, set, update } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-database.js";
-
-const firebaseConfig = {
-  apiKey: "AIzaSyAQGtOEcxFxl9FV7NASLgxLDc23u2vzS_0",
-  authDomain: "mygps-11798.firebaseapp.com",
-  databaseURL: "https://mygps-11798-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "mygps-11798",
-  storageBucket: "mygps-11798.firebasedestorage.app",
-  messagingSenderId: "271371741627",
-  appId: "1:271371741627:web:642901f43c5ad57d80bc9e"
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
-
-/* 전역 변수 */
-window.mapLevel = 4;
-window.borderRadius = 0;
-window.mapOpacity = 1;
-window.mapSize = 200;
-
-let prevPos = null;
-
-/* 실제 거리 계산 (미터 단위) */
-function distanceMeters(lat1, lon1, lat2, lon2) {
-  const R = 6371000;
-  const toRad = x => x * Math.PI / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-            Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R * c;
-}
-
-const MIN_MOVE_METERS = 5;
-
-/* GPS 위치 업로드 */
-function uploadLocation(lat, lng) {
-  set(ref(db, "location/current"), {
-    lat,
-    lng,
-    timestamp: Date.now()
-  });
-}
-
-/* 버튼 값 업로드 (3초 throttle) */
-let pendingButtonData = null;
-let lastButtonUploadTime = 0;
-const BUTTON_UPLOAD_INTERVAL = 3000;
-
-function uploadButtonValues() {
-  const now = Date.now();
-  if (!pendingButtonData) return;
-  if (now - lastButtonUploadTime >= BUTTON_UPLOAD_INTERVAL) {
-    set(ref(db, "location/buttonValues"), {
-      ...pendingButtonData
-    });
-    lastButtonUploadTime = now;
-    pendingButtonData = null;
-  } else {
-    setTimeout(uploadButtonValues, BUTTON_UPLOAD_INTERVAL - (now - lastButtonUploadTime));
-  }
-}
-
-function scheduleButtonUpload(newData) {
-  pendingButtonData = { ...newData };
-  uploadButtonValues();
-}
-
-/* 모드 전환 */
-let modeIndex = 0;
-function toggleMode(isLeftButton) {
-  if (isLeftButton) {
-    if (modeIndex > 0) modeIndex--;
-  } else {
-    if (modeIndex < 2) modeIndex++;
-  }
-  document.getElementById("mode-label").textContent = modeIndex;
-  set(ref(db, "location/settings/mode"), modeIndex);
-}
-
-/* 경로 모드 전환 */
-let routemodeIndex = 0;
-function togglerouteMode(isLeftButton) {
-  if (isLeftButton) {
-    if (routemodeIndex > 0) routemodeIndex--;
-  } else {
-    if (routemodeIndex < 2) routemodeIndex++;
-  }
-  document.getElementById("route-label").textContent = routemodeIndex;
-  set(ref(db, "location/settings/routeMode"), routemodeIndex);
-}
-
-window.onload = function() {
-  const zoomInBtn = document.getElementById('zoom-in');
-  const zoomOutBtn = document.getElementById('zoom-out');
-  const rounderInBtn = document.getElementById('rounder-in');
-  const rounderOutBtn = document.getElementById('rounder-out');
-  const opacityUpBtn = document.getElementById('opacityUp');
-  const opacityDownBtn = document.getElementById('opacityDown');
-  const sizeUpBtn = document.getElementById('size-up');
-  const sizeDownBtn = document.getElementById('size-down');
-
-  const darkOffBtn = document.getElementById("dark-off");
-  const darkOnBtn = document.getElementById("dark-on");
-
-  const opacityLabel = document.getElementById('opacity-label');
-  const radiusLabel = document.getElementById('radius-label');
-  const levelLabel = document.getElementById('level-label');
-  const sizeLabel = document.getElementById('size-label');
-
-  const routeStandardBtn = document.getElementById("route-standard");
-  const routeStraightBtn = document.getElementById("route-straight");
-
-  function updateDisplays() {
-    opacityLabel.textContent = window.mapOpacity.toFixed(2);
-    radiusLabel.textContent = window.borderRadius;
-    levelLabel.textContent = window.mapLevel;
-    sizeLabel.textContent = window.mapSize;
-  }
-  updateDisplays();
-
-  // 초기 Firebase 업로드
-  scheduleButtonUpload({
-    opacity: window.mapOpacity,
-    borderRadius: window.borderRadius,
-    mapLevel: window.mapLevel,
-    mapSize: window.mapSize
-  });
-  set(ref(db, "location/settings/mode"), modeIndex);
-  set(ref(db, "location/settings/routeMode"), routemodeIndex);
-
-  const intervalDelay = 150;
-  const startDelay = 500;
-  const zoomIncrement = 1;
-  const radiusIncrement = 10;
-  const opacityIncrement = 0.05;
-  const sizeIncrement = 20;
-
-  function changeOpacity(delta) {
-    window.mapOpacity = Math.min(1, Math.max(0.1, window.mapOpacity + delta));
-	// 소수점 2자리 반올림
-  	window.mapOpacity = Math.round(window.mapOpacity * 100) / 100;
-    updateDisplays();
-    scheduleButtonUpload({ opacity: window.mapOpacity, borderRadius: window.borderRadius, mapLevel: window.mapLevel, mapSize: window.mapSize });
-  }
-  function changeRadius(delta) {
-    window.borderRadius = Math.min(300, Math.max(0, window.borderRadius + delta));
-    updateDisplays();
-    scheduleButtonUpload({ opacity: window.mapOpacity, borderRadius: window.borderRadius, mapLevel: window.mapLevel, mapSize: window.mapSize });
-  }
-  function changeZoom(delta) {
-    window.mapLevel = Math.min(14, Math.max(1, window.mapLevel + delta));
-    updateDisplays();
-    scheduleButtonUpload({ opacity: window.mapOpacity, borderRadius: window.borderRadius, mapLevel: window.mapLevel, mapSize: window.mapSize });
-  }
-  function changeMapSize(delta) {
-    window.mapSize = Math.min(600, Math.max(100, window.mapSize + delta));
-    updateDisplays();
-    scheduleButtonUpload({ opacity: window.mapOpacity, borderRadius: window.borderRadius, mapLevel: window.mapLevel, mapSize: window.mapSize });
-  }
-
-  function addHoldEvent(button, delta, func) {
-    let interval = null;
-    let timeout = null;
-    let longPress = false;
-    const startChange = () => {
-      longPress = true;
-      interval = setInterval(() => func(delta), intervalDelay);
-    };
-    button.addEventListener('mousedown', () => {
-      button.classList.add('active');
-      longPress = false;
-      timeout = setTimeout(startChange, startDelay);
-    });
-    button.addEventListener('mouseup', () => {
-      button.classList.remove('active');
-      clearTimeout(timeout);
-      clearInterval(interval);
-      if (!longPress) func(delta);
-    });
-    button.addEventListener('mouseleave', () => {
-      button.classList.remove('active');
-      clearTimeout(timeout);
-      clearInterval(interval);
-    });
-    button.addEventListener('touchstart', (e) => {
-      e.preventDefault();
-      button.classList.add('active');
-      longPress = false;
-      timeout = setTimeout(startChange, startDelay);
-    });
-    button.addEventListener('touchend', () => {
-      button.classList.remove('active');
-      clearTimeout(timeout);
-      clearInterval(interval);
-      if (!longPress) func(delta);
-    });
-    button.addEventListener('touchcancel', () => {
-      button.classList.remove('active');
-      clearTimeout(timeout);
-      clearInterval(interval);
-    });
-  }
-
-  addHoldEvent(opacityUpBtn, opacityIncrement, changeOpacity);
-  addHoldEvent(opacityDownBtn, -opacityIncrement, changeOpacity);
-  addHoldEvent(rounderInBtn, radiusIncrement, changeRadius);
-  addHoldEvent(rounderOutBtn, -radiusIncrement, changeRadius);
-  addHoldEvent(zoomInBtn, zoomIncrement, changeZoom);
-  addHoldEvent(zoomOutBtn, -zoomIncrement, changeZoom);
-  addHoldEvent(sizeUpBtn, sizeIncrement, changeMapSize);
-  addHoldEvent(sizeDownBtn, -sizeIncrement, changeMapSize);
-  
-  addHoldEvent(darkOffBtn, null, () => toggleMode(true));
-  addHoldEvent(darkOnBtn, null, () => toggleMode(false));
-  addHoldEvent(routeStraightBtn, null, () => togglerouteMode(true));
-  addHoldEvent(routeStandardBtn, null, () => togglerouteMode(false));
-
-  /* GPS 시작 */
-  if (navigator.geolocation) {
-    navigator.geolocation.watchPosition(
-      (pos) => {
-        if (prevPos) {
-          const moveDist = distanceMeters(prevPos.lat, prevPos.lng, pos.coords.latitude, pos.coords.longitude);
-          if (moveDist >= MIN_MOVE_METERS) {
-            prevPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-            uploadLocation(pos.coords.latitude, pos.coords.longitude);
-          }
-        } else {
-          prevPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          uploadLocation(pos.coords.latitude, pos.coords.longitude);
-        }
-      },
-      (err) => console.error(err),
-      { enableHighAccuracy: true }
-    );
-  } else {
-    alert("GPS를 지원하지 않는 기기입니다.");
-  }
-
-	//---------------------------------뉴스컨트롤---------------------------------
-	//import { getDatabase, ref, set, update } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-database.js";
-	
-	//const db = getDatabase();
-	
-	function setControl(data) {
-	  update(ref(db, "ttsControl"), data);
-	}
-	
-	let currentVolume = 0.5;
-	let isPlaying = true;  // 재생 상태 기억
-	
-	const toggleBtn = document.getElementById("toggle-play-btn");
-	addHoldEvent(toggleBtn, null, () => {
-	  isPlaying = !isPlaying;
-	  if (isPlaying) {
-	    setControl({ playing: true });
-	    toggleBtn.textContent = "‖";
-	  } else {
-	    setControl({ playing: false });
-	    toggleBtn.textContent = "▶";
-	  }
-	});
-
-	/* 스크롤 방향 전환 */
-	let isReverse = false;
-	const rewindBtn = document.getElementById("rewind-btn");
-	addHoldEvent(rewindBtn, null, () => {
-	  isReverse = !isReverse;
-	  if (isReverse) {
-	    setControl({ reverse: true });
-	    rewindBtn.textContent = ">>";
-	  } else {
-	    setControl({ reverse: false });
-	    rewindBtn.textContent = "<<";
-	  }
-	});
-
-	// 버튼 UI 초기화
-	  toggleBtn.textContent = isPlaying ? "‖" : "▶";
-	  rewindBtn.textContent = isReverse ? ">>" : "<<";
-	
-	  // Firebase 초기값 업로드
-	  setControl({ playing: isPlaying, reverse: isReverse });
-		
-	// ------------------- 뉴스 글자 크기 조절 -------------------
-  let currentFontSize = 28; // 기본 글자 크기(px)
-  const fontSizeLabel = document.getElementById("volume-label"); // 기존 볼륨 라벨 사용
-
-  function updateFontSizeLabel() {
-	fontSizeLabel.textContent = currentFontSize;
-  }
-
-  function changeFontSize(delta) {
-	currentFontSize = Math.min(70, Math.max(28, currentFontSize + delta));
-	updateFontSizeLabel();
-	setControl({ fontSize: currentFontSize });
-  }
-
-  addHoldEvent(document.getElementById("vol-up"), 2, changeFontSize);   // 글자 키우기
-  addHoldEvent(document.getElementById("vol-down"), -2, changeFontSize); // 글자 줄이기
-  updateFontSizeLabel();
-  setControl({ fontSize: currentFontSize });
-};
-</script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Prism Viewer</title>
+  <style>
+    html,body { height:100%; margin:0; background:#000; }
+    #newsFrame { width:100%; height:100%; border:0; display:block; }
+    #overlay {
+      position:fixed; right:8px; top:8px; z-index:9999;
+      background:rgba(0,0,0,0.6); color:#fff; padding:6px 8px; border-radius:6px; font-size:13px;
+    }
+  </style>
 </head>
-
 <body>
-<div id="status-text">GPS 지도 컨트롤</div>
+  <div id="overlay">상태: <span id="status">연결중...</span></div>
+  <iframe id="newsFrame" src="/proxy?url=https%3A%2F%2Fnews.naver.com" allow="autoplay"></iframe>
 
-<div class="btn-row">
-  <div class="btn-label">opct <span id="opacity-label">1.00</span></div>
-  <button id="opacityUp">■</button>
-  <button id="opacityDown">□</button>
-</div>
+  <script>
+    // 설정: server 주소(배포 후 실제 도메인으로 바꿔)
+    const SERVER = location.origin; // 권장: 동일 origin (Railway 도메인)
+    // room은 쿼리 혹은 기본 'default'
+    const params = new URLSearchParams(location.search);
+    const room = params.get('room') || 'default';
 
-<div class="btn-row">
-  <div class="btn-label">radius <span id="radius-label">0</span></div>
-  <button id="rounder-out">□</button>
-  <button id="rounder-in">○</button>
-</div>
+    const statusEl = document.getElementById('status');
+    const iframe = document.getElementById('newsFrame');
 
-<div class="btn-row">
-  <div class="btn-label">mode <span id="mode-label">0</span></div>
-  <button id="dark-off">○</button>
-  <button id="dark-on">◐</button>
-</div>
+    // WebSocket
+    const wsProto = (location.protocol === 'https:') ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProto}//${location.host}/?type=viewer&room=${encodeURIComponent(room)}`;
+    const ws = new WebSocket(wsUrl);
 
-<div class="btn-row">
-  <div class="btn-label">route <span id="route-label">0</span></div>
-  <button id="route-straight">ㅡ</button>
-  <button id="route-standard">ㄹ</button>
-</div>
+    ws.onopen = () => statusEl.textContent = '연결됨';
+    ws.onclose = () => statusEl.textContent = '연결 끊김';
+    ws.onerror = (e) => statusEl.textContent = '오류';
 
-<div class="btn-row">
-  <div class="btn-label">size <span id="size-label">200</span></div>
-  <button id="size-up">+</button>
-  <button id="size-down">-</button>
-</div>
+    // Helper: try to perform scrolling and navigation inside iframe.
+    // Because we proxy pages via /proxy, iframe content is same-origin (served from our domain),
+    // so we can access iframe.contentWindow and manipulate DOM.
+    function safeExec(fn) {
+      try {
+        const win = iframe.contentWindow;
+        if (!win) return;
+        fn(win);
+      } catch (e) {
+        console.warn('safeExec failed', e);
+      }
+    }
 
-<div class="btn-row">
-  <div class="btn-label">zoom <span id="level-label">4</span></div>
-  <button id="zoom-out">< ></button>  
-  <button id="zoom-in">> <</button>   
-</div>
+    ws.onmessage = (ev) => {
+      let msg = ev.data;
+      // expected commands: JSON or simple strings
+      // examples:
+      // "scrollDown", "scrollUp", "go:https://...", "click:selector", "eval:alert(1)"
+      try {
+        const obj = JSON.parse(msg);
+        if (obj.cmd === 'goto') {
+          iframe.src = `/proxy?url=${encodeURIComponent(obj.url)}`;
+          return;
+        }
+        // add other json commands as needed
+      } catch (e) {
+        // not json, treat as legacy string
+      }
 
-<hr>
-<div id="status-text">뉴스 컨트롤</div>
-<div class="btn-row">
-  <div class="btn-label">글자 <span id="volume-label">28</span></div>
-  <button id="vol-up">+</button>
-  <button id="vol-down">-</button>
-</div>
-	
-<div class="btn-row">
-  <div class="btn-label">재생<br>방향</div>
-  <button id="toggle-play-btn">▶</button>
-  <button id="rewind-btn"><<</button>
-</div>
+      if (msg === 'scrollDown') {
+        safeExec(win => win.scrollBy(0, 400));
+      } else if (msg === 'scrollUp') {
+        safeExec(win => win.scrollBy(0, -400));
+      } else if (msg.startsWith('go:')) {
+        const url = msg.slice(3);
+        iframe.src = `/proxy?url=${encodeURIComponent(url)}`;
+      } else if (msg.startsWith('eval:')) {
+        const code = msg.slice(5);
+        safeExec(win => {
+          try { win.eval(code); } catch (e) { console.warn(e); }
+        });
+      } else if (msg.startsWith('click:')) {
+        const sel = msg.slice(6);
+        safeExec(win => {
+          try {
+            const el = win.document.querySelector(sel);
+            if (el) el.click();
+          } catch (e) { console.warn(e); }
+        });
+      } else {
+        // fallback: try to eval as JS
+        safeExec(win => {
+          try { win.eval(msg); } catch (e) { console.warn(e); }
+        });
+      }
+    };
+  </script>
 </body>
 </html>
