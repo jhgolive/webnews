@@ -61,40 +61,50 @@ app.get("/proxy", async (req, res) => {
   }
 
   try {
-    const targetUrl = new URL(target); // throws if invalid
+    const targetUrl = new URL(target);
+
     const resp = await fetch(target, {
       headers: {
-        // optional: set a mobile-ish UA if you want
         "User-Agent": req.headers["user-agent"] || "Mozilla/5.0"
       }
     });
 
-    // copy most headers except the ones that break framing
-    const headersToSkip = ["x-frame-options", "content-security-policy", "content-security-policy-report-only", "strict-transport-security"];
+    // FIX 1. Content-Encoding 제거 (gzip/br/deflate 문제 해결)
+    resp.headers.delete("content-encoding");
+    resp.headers.delete("Content-Encoding");
+
+    // Headers to skip
+    const headersToSkip = [
+      "x-frame-options",
+      "content-security-policy",
+      "content-security-policy-report-only",
+      "strict-transport-security",
+      "content-encoding"  // FIX 2
+    ];
+
     for (const [k, v] of resp.headers.entries()) {
       if (!headersToSkip.includes(k.toLowerCase())) {
         res.setHeader(k, v);
       }
     }
 
-    // Force content-type
     const contentType = resp.headers.get("content-type") || "text/html; charset=utf-8";
     res.setHeader("Content-Type", contentType);
 
     const body = await resp.text();
 
-    // If HTML, inject <base> and a small marker comment
     if (contentType.includes("text/html")) {
-      // inject <base href="..."> right after <head> start so relative links work
-      const baseTag = `<base href="${targetUrl.origin}" />\n`;
-      const injected = body.replace(/<head([^>]*)>/i, (m) => `${m}\n${baseTag}<meta name="proxied-from" content="${targetUrl.href}">`);
+      const baseTag =
+        `<base href="${targetUrl.origin}" />\n` +
+        `<meta name="proxied-from" content="${targetUrl.href}">\n`;
+
+      const injected = body.replace(/<head([^>]*)>/i, (m) => `${m}\n${baseTag}`);
       res.send(injected);
       return;
     }
 
-    // for other types (images, etc.) just forward binary
-    const buffer = await resp.arrayBuffer();
-    res.send(Buffer.from(buffer));
+    const buffer = Buffer.from(await resp.arrayBuffer());
+    res.send(buffer);
   } catch (err) {
     console.error("Proxy error:", err);
     res.status(500).send("Proxy fetch failed: " + String(err.message));
