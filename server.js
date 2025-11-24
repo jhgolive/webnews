@@ -19,7 +19,6 @@ import helmet from "helmet";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
-import { fetch } from "undici";
 
 dotenv.config();
 
