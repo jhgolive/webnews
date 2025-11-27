@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8" />
-<title>Google Photo News</title>
+<meta charset="UTF-8">
+<title>Photo News Scroll</title>
 <style>
   body {
     margin: 0;
@@ -46,14 +46,15 @@
 <div id="wrapper"></div>
 
 <script>
-const API = "https://webnews.rock0424.workers.dev/"; // Worker URL
-const DEFAULT_IMG = "https://i.namu.wiki/i/cmmICCmMakKWvyvBveVphg3b0fF3-L6U3gT19vJjxKZM4-HSBRx0PR6mi17ycvFbRwWQMG9OVZEj0Lotz04f4gLe2SaWF0_5kr4h2ixu5XGMXqRE5KcTy9aMsGQycQPKoGUfODGeby2VVDJ1CKCuZg.svg"; // 기본 이미지
+const API = "https://photo-news-jhhan.workers.dev/"; // Worker URL
+const DEFAULT_IMG = "https://upload.wikimedia.org/wikipedia/commons/4/44/News_icon.png";
 
 async function loadNews() {
   const data = await fetch(API).then(r => r.json());
 
   const wrapper = document.getElementById("wrapper");
   wrapper.innerHTML = data
+    .filter(n => n.img)   // 이미지 있는 뉴스만
     .slice(0, 15)
     .map(n => `
       <div class="item">
@@ -65,6 +66,5 @@ async function loadNews() {
 
 loadNews();
 </script>
-
 </body>
 </html>
